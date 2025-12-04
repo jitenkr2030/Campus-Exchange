@@ -1,0 +1,424 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// User model for students and campus members
+model User {
+  id              String   @id @default(cuid())
+  phone           String   @unique
+  email           String?  @unique
+  name            String
+  profileImage    String?
+  isVerified      Boolean  @default(false)
+  isPremium       Boolean  @default(false)
+  premiumExpires  DateTime?
+  campusId        String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // Relations
+  campus          Campus         @relation(fields: [campusId], references: [id])
+  listings        Listing[]
+  purchases       Transaction[]
+  sentMessages    Message[]     @relation("SenderMessages")
+  receivedMessages Message[]     @relation("ReceiverMessages")
+  givenReviews    Review[]       @relation("ReviewerReviews")
+  receivedReviews Review[]       @relation("RevieweeReviews")
+  badges          UserBadge[]
+  referrals       Referral[]     @relation("ReferrerUser")
+  referredBy      Referral?      @relation("ReferredUser")
+  wallet          Wallet?
+  orders          Order[]
+  
+  @@map("users")
+}
+
+// Campus model for different colleges/universities
+model Campus {
+  id          String   @id @default(cuid())
+  name        String
+  address     String?
+  city        String
+  state       String
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  users       User[]
+  listings    Listing[]
+  partners    CampusPartner[]
+  businessAds BusinessAd[]
+  events      Event[]
+  products    Product[]
+  orders      Order[]
+  
+  @@map("campuses")
+}
+
+// Category model for marketplace categories
+model Category {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  listings    Listing[]
+  
+  @@map("categories")
+}
+
+// Listing model for items being sold/traded
+model Listing {
+  id              String     @id @default(cuid())
+  title           String
+  description     String?
+  price           Float
+  category        String     // "NOTES", "BOOKS", "BIKES", "FOOD_TOKENS", "ROOM_RENTALS"
+  condition       String?    // "NEW", "LIKE_NEW", "GOOD", "FAIR", "POOR"
+  images          String?    // JSON string array of image URLs
+  location        String?
+  isAvailable     Boolean    @default(true)
+  isFeatured      Boolean    @default(false)
+  views           Int        @default(0)
+  contactUnlocked Boolean    @default(false)
+  expiresAt       DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  // Foreign keys
+  userId          String
+  campusId        String
+  categoryId      String
+
+  // Relations
+  user            User       @relation(fields: [userId], references: [id])
+  campus          Campus     @relation(fields: [campusId], references: [id])
+  categoryRelation Category  @relation(fields: [categoryId], references: [id])
+  transactions    Transaction[]
+  messages        Message[]
+  reviews         Review[]
+  
+  @@map("listings")
+}
+
+// Transaction model for payments and revenue tracking
+model Transaction {
+  id            String      @id @default(cuid())
+  type          String      // "LISTING_FEE", "WHATSAPP_LEAD", "PREMIUM_SUBSCRIPTION", "HIGH_VALUE_COMMISSION", "SPONSORED_LISTING", "BUSINESS_AD", "EVENT_PARTNERSHIP"
+  amount        Float
+  currency      String      @default("INR")
+  status        String      // "PENDING", "COMPLETED", "FAILED", "REFUNDED"
+  paymentId     String?     // External payment gateway ID
+  paymentMethod String?     // "UPI", "CARD", "WALLET"
+  description   String?
+  commissionRate Float?      // Commission percentage for high-value items
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  // Foreign keys
+  userId        String
+  listingId     String?
+  businessAdId  String?
+  eventId       String?
+  orderId       String?
+
+  // Relations
+  user          User        @relation(fields: [userId], references: [id])
+  listing       Listing?    @relation(fields: [listingId], references: [id])
+  businessAd    BusinessAd? @relation(fields: [businessAdId], references: [id])
+  event         Event?      @relation(fields: [eventId], references: [id])
+  order         Order?      @relation(fields: [orderId], references: [id])
+  
+  @@map("transactions")
+}
+
+// Message model for in-app chat
+model Message {
+  id        String   @id @default(cuid())
+  content   String
+  type      String   @default("TEXT") // "TEXT", "IMAGE", "FILE"
+  createdAt DateTime @default(now())
+
+  // Foreign keys
+  senderId  String
+  receiverId String
+  listingId String
+
+  // Relations
+  sender    User     @relation("SenderMessages", fields: [senderId], references: [id])
+  receiver  User     @relation("ReceiverMessages", fields: [receiverId], references: [id])
+  listing   Listing  @relation(fields: [listingId], references: [id])
+  
+  @@map("messages")
+}
+
+// Review model for ratings and feedback
+model Review {
+  id        String   @id @default(cuid())
+  rating    Int      // 1-5 stars
+  comment   String?
+  createdAt DateTime @default(now())
+
+  // Foreign keys
+  reviewerId String
+  revieweeId String
+  listingId  String
+
+  // Relations
+  reviewer   User     @relation("ReviewerReviews", fields: [reviewerId], references: [id])
+  reviewee   User     @relation("RevieweeReviews", fields: [revieweeId], references: [id])
+  listing    Listing  @relation(fields: [listingId], references: [id])
+  
+  @@map("reviews")
+}
+
+// Badge model for gamification
+model Badge {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  icon        String?
+  color       String?
+  criteria    String?  // JSON string describing how to earn
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  // Relations
+  userBadges  UserBadge[]
+  
+  @@map("badges")
+}
+
+// UserBadge join table for many-to-many relationship
+model UserBadge {
+  id         String   @id @default(cuid())
+  earnedAt   DateTime @default(now())
+
+  // Foreign keys
+  userId     String
+  badgeId    String
+
+  // Relations
+  user       User     @relation(fields: [userId], references: [id])
+  badge      Badge    @relation(fields: [badgeId], references: [id])
+  
+  @@unique([userId, badgeId])
+  @@map("user_badges")
+}
+
+// Referral model for growth loops
+model Referral {
+  id          String   @id @default(cuid())
+  code        String   @unique
+  status      String   @default("PENDING") // "PENDING", "COMPLETED", "EXPIRED"
+  reward      Float    @default(50) // ₹50 reward
+  expiresAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+
+  // Foreign keys
+  referrerId  String
+  referredId  String?  @unique
+
+  // Relations
+  referrer    User     @relation("ReferrerUser", fields: [referrerId], references: [id])
+  referred    User?    @relation("ReferredUser", fields: [referredId], references: [id])
+  
+  @@map("referrals")
+}
+
+// Campus Partner model for business partnerships
+model CampusPartner {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  category    String   // "PRINT_SHOP", "CAFE", "STATIONERY", "TUTOR", "OTHER"
+  address     String?
+  phone       String?
+  email       String?
+  website     String?
+  isActive    Boolean  @default(true)
+  monthlyFee  Float    @default(199) // ₹199 per month
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  campusId    String
+  campus      Campus   @relation(fields: [campusId], references: [id])
+  
+  @@map("campus_partners")
+}
+
+// Business Ad model for local business advertisements
+model BusinessAd {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  imageUrl    String?
+  targetUrl   String?
+  category    String   // "RESTAURANT", "RETAIL", "SERVICES", "EDUCATION", "HEALTHCARE", "OTHER"
+  location    String?
+  isActive    Boolean  @default(true)
+  startDate   DateTime @default(now())
+  endDate     DateTime?
+  monthlyFee  Float    @default(199) // ₹199 per month
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  campusId    String
+  campus      Campus   @relation(fields: [campusId], references: [id])
+  transactions Transaction[]
+  
+  @@map("business_ads")
+}
+
+// Event model for campus events and partnerships
+model Event {
+  id            String   @id @default(cuid())
+  title         String
+  description   String?
+  imageUrl      String?
+  category      String   // "TECH_FEST", "CULTURAL_FEST", "SPORTS", "WORKSHOP", "SEMINAR", "OTHER"
+  location      String?
+  startDate     DateTime
+  endDate       DateTime
+  organizerName String?
+  organizerContact String?
+  maxParticipants Int?
+  currentParticipants Int @default(0)
+  fee           Float?   // Event fee for participants
+  partnershipFee Float?  // Partnership fee for sponsors
+  isActive      Boolean  @default(true)
+  isPartnered   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  campusId      String
+  campus        Campus   @relation(fields: [campusId], references: [id])
+  transactions Transaction[]
+  
+  @@map("events")
+}
+
+// Product model for campus store add-on products
+model Product {
+  id            String   @id @default(cuid())
+  name          String
+  description   String?
+  imageUrl      String?
+  category      String   // "MERCHANDISE", "ELECTRONICS", "STATIONERY", "ACCESSORIES", "BOOKS", "OTHER"
+  price         Float
+  stockQuantity Int      @default(0)
+  sku           String?  @unique
+  isActive      Boolean  @default(true)
+  isDigital     Boolean  @default(false)
+  digitalUrl    String?  // For digital products
+  weight        Float?   // For shipping calculation
+  dimensions    String?  // For shipping calculation
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  campusId      String
+  campus        Campus   @relation(fields: [campusId], references: [id])
+  orderItems    OrderItem[]
+  
+  @@map("products")
+}
+
+// Order model for campus store purchases
+model Order {
+  id            String   @id @default(cuid())
+  orderNumber   String   @unique
+  status        String   @default("PENDING") // "PENDING", "PROCESSING", "SHIPPED", "DELIVERED", "CANCELLED"
+  totalAmount   Float
+  shippingAddress String?
+  trackingNumber String?
+  notes         String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  userId        String
+  user          User     @relation(fields: [userId], references: [id])
+  campusId      String
+  campus        Campus   @relation(fields: [campusId], references: [id])
+  transactions  Transaction[]
+  orderItems    OrderItem[]
+  
+  @@map("orders")
+}
+
+// OrderItem model for order line items
+model OrderItem {
+  id            String   @id @default(cuid())
+  quantity      Int      @default(1)
+  price         Float    // Price at time of purchase
+  createdAt     DateTime @default(now())
+
+  // Relations
+  orderId       String
+  order         Order    @relation(fields: [orderId], references: [id])
+  productId     String
+  product       Product  @relation(fields: [productId], references: [id])
+  
+  @@unique([orderId, productId])
+  @@map("order_items")
+}
+
+// Wallet model for user wallet system
+model Wallet {
+  id            String   @id @default(cuid())
+  balance       Float    @default(0)
+  currency      String   @default("INR")
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  userId        String   @unique
+  user          User     @relation(fields: [userId], references: [id])
+  transactions  WalletTransaction[]
+  
+  @@map("wallets")
+}
+
+// WalletTransaction model for wallet transactions
+model WalletTransaction {
+  id            String   @id @default(cuid())
+  type          String   // "CREDIT", "DEBIT", "REFUND"
+  amount        Float
+  balance       Float    // Wallet balance after transaction
+  description   String?
+  referenceId   String?  // Reference to external transaction (listing, order, etc.)
+  referenceType String?  // "LISTING_FEE", "CONTACT_UNLOCK", "PREMIUM_SUBSCRIPTION", etc.
+  status        String   @default("COMPLETED") // "PENDING", "COMPLETED", "FAILED", "CANCELLED"
+  createdAt     DateTime @default(now())
+
+  // Relations
+  walletId      String
+  wallet        Wallet   @relation(fields: [walletId], references: [id])
+  
+  @@map("wallet_transactions")
+}
